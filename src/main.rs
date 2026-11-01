@@ -56,15 +56,15 @@ use windows_sys::Win32::UI::Shell::{
     NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CallNextHookEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-    DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, GetWindowThreadProcessId,
-    KillTimer, LoadIconW, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW,
-    RegisterWindowMessageW, SetForegroundWindow, SetTimer, SetWindowsHookExW, TrackPopupMenu,
-    TranslateMessage, UnhookWindowsHookEx, IDI_APPLICATION, KBDLLHOOKSTRUCT, MB_ICONERROR, MB_OK,
-    MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, TPM_NONOTIFY, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, WH_KEYBOARD_LL, WM_APP, WM_COMMAND, WM_DESTROY, WM_INPUTLANGCHANGEREQUEST,
-    WM_KEYDOWN, WM_KEYUP, WM_NULL, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW,
-    WS_POPUP,
+    AppendMenuW, CallNextHookEx, CreateIconFromResourceEx, CreatePopupMenu, CreateWindowExW,
+    DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
+    GetWindowThreadProcessId, KillTimer, LoadIconW, MessageBoxW, PostMessageW, PostQuitMessage,
+    RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, SetTimer, SetWindowsHookExW,
+    TrackPopupMenu, TranslateMessage, UnhookWindowsHookEx, HICON, IDI_APPLICATION, KBDLLHOOKSTRUCT,
+    MB_ICONERROR, MB_OK, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, TPM_NONOTIFY,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, WH_KEYBOARD_LL, WM_APP, WM_COMMAND, WM_DESTROY,
+    WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_KEYUP, WM_NULL, WM_RBUTTONUP, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_POPUP,
 };
 
 const LLKHF_INJECTED: u32 = 0x10;
@@ -308,6 +308,66 @@ fn save_settings_async() {
     });
 }
 
+// ---------------------------------------------------------------- иконка
+
+static ICON_BYTES: &[u8] = include_bytes!("../assets/icon.ico");
+
+/// Иконка приложения из встроенного .ico: берём ближайший к 32x32 PNG-энтри.
+/// При любой проблеме — стандартная системная иконка.
+unsafe fn load_app_icon() -> HICON {
+    let bytes = ICON_BYTES;
+    if bytes.len() < 6 {
+        return LoadIconW(null_mut(), IDI_APPLICATION);
+    }
+
+    let count = u16::from_le_bytes([bytes[4], bytes[5]]) as usize;
+    let mut best: Option<(i32, usize, usize)> = None;
+
+    for i in 0..count {
+        let base = 6 + i * 16;
+        if base + 16 > bytes.len() {
+            break;
+        }
+        let width = bytes[base] as i32;
+        let width = if width == 0 { 256 } else { width };
+        let size = u32::from_le_bytes([
+            bytes[base + 8],
+            bytes[base + 9],
+            bytes[base + 10],
+            bytes[base + 11],
+        ]) as usize;
+        let offset = u32::from_le_bytes([
+            bytes[base + 12],
+            bytes[base + 13],
+            bytes[base + 14],
+            bytes[base + 15],
+        ]) as usize;
+
+        if offset + size > bytes.len() {
+            continue;
+        }
+
+        let score = (width - 32).abs();
+        let better = match best {
+            None => true,
+            Some((best_score, _, _)) => score < best_score,
+        };
+        if better {
+            best = Some((score, offset, size));
+        }
+    }
+
+    if let Some((_, offset, size)) = best {
+        let ptr = bytes[offset..].as_ptr();
+        let icon = CreateIconFromResourceEx(ptr, size as u32, 1, 0x0003_0000, 0, 0, 0);
+        if !icon.is_null() {
+            return icon;
+        }
+    }
+
+    LoadIconW(null_mut(), IDI_APPLICATION)
+}
+
 // ---------------------------------------------------------------- трей
 
 unsafe fn wide(s: &str) -> Vec<u16> {
@@ -334,7 +394,7 @@ unsafe fn add_tray_icon(hwnd: HWND) -> bool {
     nid.uID = TRAY_ID;
     nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     nid.uCallbackMessage = WM_TRAY;
-    nid.hIcon = LoadIconW(null_mut(), IDI_APPLICATION);
+    nid.hIcon = load_app_icon();
     for (dst, src) in nid.szTip.iter_mut().zip(wide(&tray_tooltip())) {
         *dst = src;
     }
@@ -853,6 +913,35 @@ mod tests {
                 assert!(!s.is_empty());
                 assert!(s.encode_utf16().count() < 120, "too long: {s}");
             }
+        }
+    }
+
+    #[test]
+    fn embedded_icon_has_valid_entries() {
+        let bytes = ICON_BYTES;
+        assert!(bytes.len() > 6, "icon is empty");
+        assert_eq!(u16::from_le_bytes([bytes[2], bytes[3]]), 1, "not an ICO");
+
+        let count = u16::from_le_bytes([bytes[4], bytes[5]]) as usize;
+        assert!(count >= 5, "expected several sizes, got {count}");
+
+        for i in 0..count {
+            let base = 6 + i * 16;
+            assert!(base + 16 <= bytes.len());
+            let size = u32::from_le_bytes([
+                bytes[base + 8],
+                bytes[base + 9],
+                bytes[base + 10],
+                bytes[base + 11],
+            ]) as usize;
+            let offset = u32::from_le_bytes([
+                bytes[base + 12],
+                bytes[base + 13],
+                bytes[base + 14],
+                bytes[base + 15],
+            ]) as usize;
+            assert!(size > 0, "entry {i} is empty");
+            assert!(offset + size <= bytes.len(), "entry {i} out of bounds");
         }
     }
 }
