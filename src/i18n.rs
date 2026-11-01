@@ -25,8 +25,14 @@ pub struct Msgs {
     pub shift_caps: &'static str,
     pub restart: &'static str,
     pub exit: &'static str,
+    pub check_updates: &'static str,
+    pub about: &'static str,
     pub tip_on: &'static str,
     pub tip_off: &'static str,
+    pub update_available: &'static str,
+    pub update_none: &'static str,
+    pub update_error: &'static str,
+    pub about_text: &'static str,
 }
 
 const RU: Msgs = Msgs {
@@ -40,8 +46,14 @@ const RU: Msgs = Msgs {
     shift_caps: "Shift+CapsLock — обычный Caps",
     restart: "Перезапустить",
     exit: "Выход",
+    check_updates: "Проверить обновления",
+    about: "О программе",
     tip_on: "caps-switch: CapsLock переключает язык",
     tip_off: "caps-switch: выключено",
+    update_available: "Доступна версия {new} (у вас {current}).\n\nСкачать и установить сейчас?",
+    update_none: "У вас последняя версия ({current}).",
+    update_error: "Не удалось проверить обновления.\n\nПроверьте подключение к интернету.",
+    about_text: "caps-switch {version}\n\nCapsLock переключает раскладку.\nShift+CapsLock — обычный Caps.\n\nGitHub:\n{url}\n\nЛицензия: MIT",
 };
 
 const EN: Msgs = Msgs {
@@ -55,8 +67,14 @@ const EN: Msgs = Msgs {
     shift_caps: "Shift+CapsLock — normal Caps Lock",
     restart: "Restart",
     exit: "Exit",
+    check_updates: "Check for updates",
+    about: "About",
     tip_on: "caps-switch: CapsLock switches layout",
     tip_off: "caps-switch: disabled",
+    update_available: "Version {new} is available (you have {current}).\n\nDownload and install now?",
+    update_none: "You are up to date ({current}).",
+    update_error: "Could not check for updates.\n\nCheck your internet connection.",
+    about_text: "caps-switch {version}\n\nCapsLock switches the keyboard layout.\nShift+CapsLock — normal Caps Lock.\n\nGitHub:\n{url}\n\nLicense: MIT",
 };
 
 /// Язык по умолчанию для текущей системы.

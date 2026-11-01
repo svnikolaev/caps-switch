@@ -75,6 +75,8 @@ Right-click the tray icon:
 | Interface language | Auto / Русский / English |
 | Shift+CapsLock — normal Caps | allow the native caps toggle |
 | Restart | restart the app (e.g. if Windows killed it) |
+| Check for updates | compare with the latest GitHub release and install it |
+| About | version, GitHub link, license |
 | Exit | quit |
 
 Settings are stored in `HKCU\Software\caps-switch` (`Enabled`, `ShiftCaps`, `Mode`, `Language`).

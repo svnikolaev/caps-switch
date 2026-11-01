@@ -60,11 +60,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
     GetWindowThreadProcessId, KillTimer, LoadIconW, MessageBoxW, PostMessageW, PostQuitMessage,
     RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, SetTimer, SetWindowsHookExW,
-    TrackPopupMenu, TranslateMessage, UnhookWindowsHookEx, HICON, IDI_APPLICATION, KBDLLHOOKSTRUCT,
-    MB_ICONERROR, MB_OK, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, TPM_NONOTIFY,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, WH_KEYBOARD_LL, WM_APP, WM_COMMAND, WM_DESTROY,
-    WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_KEYUP, WM_NULL, WM_RBUTTONUP, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_POPUP,
+    TrackPopupMenu, TranslateMessage, UnhookWindowsHookEx, HICON, IDI_APPLICATION, IDYES,
+    KBDLLHOOKSTRUCT, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO,
+    MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, TPM_NONOTIFY, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, WH_KEYBOARD_LL, WM_APP, WM_COMMAND, WM_DESTROY, WM_INPUTLANGCHANGEREQUEST,
+    WM_KEYDOWN, WM_KEYUP, WM_NULL, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW,
+    WS_POPUP,
 };
 
 const LLKHF_INJECTED: u32 = 0x10;
@@ -76,8 +77,12 @@ const MENU_TOGGLE: usize = 1001;
 const MENU_SHIFT_CAPS: usize = 1002;
 const MENU_RESTART: usize = 1003;
 const MENU_EXIT: usize = 1004;
+const MENU_UPDATE: usize = 1005;
+const MENU_ABOUT: usize = 1006;
 const MENU_MODE_BASE: usize = 1100;
 const MENU_LANG_BASE: usize = 1200;
+
+const REPO: &str = "svnikolaev/caps-switch";
 
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "caps-switch";
@@ -473,6 +478,14 @@ unsafe fn show_menu(hwnd: HWND) {
     let item_restart = wide(m.restart);
     AppendMenuW(menu, MF_STRING, MENU_RESTART, item_restart.as_ptr());
 
+    let item_update = wide(m.check_updates);
+    AppendMenuW(menu, MF_STRING, MENU_UPDATE, item_update.as_ptr());
+
+    let item_about = wide(m.about);
+    AppendMenuW(menu, MF_STRING, MENU_ABOUT, item_about.as_ptr());
+
+    AppendMenuW(menu, MF_SEPARATOR, 0, null_mut());
+
     let item_exit = wide(m.exit);
     AppendMenuW(menu, MF_STRING, MENU_EXIT, item_exit.as_ptr());
 
@@ -510,6 +523,8 @@ unsafe fn handle_command(hwnd: HWND, cmd: usize) {
             update_tray(hwnd);
         }
         MENU_RESTART => restart_app(),
+        MENU_UPDATE => check_updates(),
+        MENU_ABOUT => show_about(),
         MENU_EXIT => PostQuitMessage(0),
         n if (MENU_MODE_BASE..MENU_MODE_BASE + 3).contains(&n) => {
             MODE.store((n - MENU_MODE_BASE) as u8, Ordering::Relaxed);
@@ -530,6 +545,166 @@ unsafe fn restart_app() {
         let _ = Command::new(exe).arg("--restarted").spawn();
     }
     PostQuitMessage(0);
+}
+
+// ---------------------------------------------------------------- обновления
+
+fn current_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = text.trim().trim_start_matches('v').split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
+fn http_get(url: &str) -> Option<String> {
+    let output = Command::new("curl")
+        .args([
+            "-s",
+            "-L",
+            "--max-time",
+            "20",
+            "-H",
+            "User-Agent: caps-switch",
+            url,
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Значение строкового поля JSON после `needle` (простой парсер без зависимостей).
+fn json_field(text: &str, needle: &str) -> Option<String> {
+    let start = text.find(needle)? + needle.len();
+    let rest = &text[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Последний релиз: (версия, URL файла caps-switch.exe).
+fn latest_release() -> Option<(String, String)> {
+    let body = http_get(&format!(
+        "https://api.github.com/repos/{REPO}/releases/latest"
+    ))?;
+    let tag = json_field(&body, "\"tag_name\":\"")?;
+
+    // Ищем ссылку именно на standalone exe (в релизе есть ещё setup.exe).
+    let asset_start = body.find("\"name\":\"caps-switch.exe\"")?;
+    let url = json_field(&body[asset_start..], "\"browser_download_url\":\"")?;
+
+    Some((tag, url))
+}
+
+unsafe fn show_message(text: &str) {
+    let body = wide(text);
+    let title = wide("caps-switch");
+    MessageBoxW(
+        null_mut(),
+        body.as_ptr(),
+        title.as_ptr(),
+        MB_OK | MB_ICONINFORMATION,
+    );
+}
+
+unsafe fn ask_yes_no(text: &str) -> bool {
+    let body = wide(text);
+    let title = wide("caps-switch");
+    MessageBoxW(
+        null_mut(),
+        body.as_ptr(),
+        title.as_ptr(),
+        MB_YESNO | MB_ICONQUESTION,
+    ) == IDYES
+}
+
+fn show_about() {
+    let m = msgs(effective_lang());
+    let text = m
+        .about_text
+        .replace("{version}", current_version())
+        .replace("{url}", &format!("https://github.com/{REPO}"));
+    unsafe { show_message(&text) };
+}
+
+fn check_updates() {
+    let m = msgs(effective_lang());
+    let current = current_version();
+
+    let Some((tag, url)) = latest_release() else {
+        unsafe { show_message(m.update_error) };
+        return;
+    };
+
+    let latest = tag.trim_start_matches('v').to_string();
+    let is_newer = match (parse_version(&latest), parse_version(current)) {
+        (Some(new), Some(cur)) => new > cur,
+        _ => false,
+    };
+
+    if !is_newer {
+        let text = m.update_none.replace("{current}", current);
+        unsafe { show_message(&text) };
+        return;
+    }
+
+    let text = m
+        .update_available
+        .replace("{new}", &latest)
+        .replace("{current}", current);
+
+    if unsafe { ask_yes_no(&text) } {
+        download_and_restart(&url);
+    }
+}
+
+/// Скачивает новый exe и перезапускает приложение через временный cmd-скрипт:
+/// заменить файл можно только после выхода процесса.
+fn download_and_restart(url: &str) {
+    let target = exe_path();
+    let tmp = std::env::temp_dir().join("caps-switch-update.exe");
+
+    let downloaded = Command::new("curl")
+        .args(["-s", "-L", "--max-time", "180", "-o"])
+        .arg(&tmp)
+        .arg(url)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !downloaded || !tmp.exists() {
+        unsafe { show_message(msgs(effective_lang()).update_error) };
+        return;
+    }
+
+    let script = std::env::temp_dir().join("caps-switch-update.cmd");
+    let body = format!(
+        "@echo off\r\nping -n 3 127.0.0.1 >nul\r\nmove /y \"{}\" \"{}\"\r\nstart \"\" \"{}\"\r\ndel \"%~f0\"\r\n",
+        tmp.display(),
+        target,
+        target
+    );
+
+    if std::fs::write(&script, body).is_err() {
+        unsafe { show_message(msgs(effective_lang()).update_error) };
+        return;
+    }
+
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = Command::new("cmd")
+        .args(["/c"])
+        .arg(&script)
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+
+    unsafe { PostQuitMessage(0) };
 }
 
 unsafe extern "system" fn wnd_proc(
@@ -852,6 +1027,10 @@ fn main() {
         "--install" => install(args.iter().any(|a| a == "--elevated")),
         "--uninstall" => uninstall(),
         "--status" => status(),
+        "--check-updates" => match latest_release() {
+            Some((tag, _)) => say!("latest: {tag} (current {})", current_version()),
+            None => esay!("could not check for updates"),
+        },
         "--version" | "-V" => say!("{}", env!("CARGO_PKG_VERSION")),
         "--help" | "-h" => help(),
         "--restarted" => {}
