@@ -1,7 +1,0 @@
-fix: CLI output must not panic when piped
-
-println!/eprintln! abort the process with EPIPE when the reader closes early
-(PowerShell, | more, CI). Output now goes through say!/esay! macros that ignore
-write errors; CI smoke test captures output with Start-Process redirect.
-
-version 0.2.2
