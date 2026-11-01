@@ -42,44 +42,74 @@ function New-IconBitmap([int]$size) {
 
     $s = [float]$size
     $margin = $s * 0.05
-    $depth = [float]([Math]::Max(1.0, $s * 0.11))   # высота «боковины» — 3D
+    $depth = [float]([Math]::Max(1.2, $s * 0.13))   # высота «боковины»
     $radius = $s * 0.20
-    $topH = $s - 2 * $margin - $depth
     $rectW = $s - 2 * $margin
+    $topH = $s - 2 * $margin - $depth
+    $inset = [float]($s * 0.012)
 
-    # Нижняя часть (основание) — тёмно-серый «бок» клавиши.
+    # 1. Основание: почти чёрный бок клавиши.
     $basePath = New-RoundedRectPath $margin ($margin + $depth) $rectW $topH $radius
-    $baseBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 58, 58, 60))
+    $baseBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 20, 20, 22))
     $g.FillPath($baseBrush, $basePath)
 
-    # Верхняя площадка — светло-серый градиент.
-    $topPath = New-RoundedRectPath $margin $margin $rectW $topH $radius
+    # 2. Верхняя площадка (ободок вокруг углубления).
+    $topX = $margin + $inset
+    $topW = $rectW - 2 * $inset
+    $topPath = New-RoundedRectPath $topX $margin $topW $topH ([float]($radius * 0.95))
     $topBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
         [System.Drawing.PointF]::new(0, $margin),
         [System.Drawing.PointF]::new(0, $margin + $topH),
-        [System.Drawing.Color]::FromArgb(255, 214, 214, 216),
-        [System.Drawing.Color]::FromArgb(255, 154, 154, 158)
+        [System.Drawing.Color]::FromArgb(255, 92, 92, 100),
+        [System.Drawing.Color]::FromArgb(255, 58, 58, 64)
     )
     $g.FillPath($topBrush, $topPath)
 
-    # Тонкая светлая кромка сверху — блик.
-    $edgePen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(160, 255, 255, 255), [float]([Math]::Max(0.6, $s * 0.02)))
-    $g.DrawPath($edgePen, $topPath)
+    # 3. Вдавленная площадка: тёмный градиент + внутренние тени.
+    $pad = [float]([Math]::Max(1.0, $s * 0.09))
+    $padX = $topX + $pad
+    $padY = $margin + $pad
+    $padW = $topW - 2 * $pad
+    $padH = $topH - 2 * $pad
+    $padRadius = [float]([Math]::Max(0.8, $radius * 0.55))
 
-    # Стрелки — тёмные, чтобы читались на сером.
-    $penWidth = [float]([Math]::Max(1.0, $s * 0.075))
-    $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 34, 34, 36), $penWidth)
+    $padPath = New-RoundedRectPath $padX $padY $padW $padH $padRadius
+    $padBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+        [System.Drawing.PointF]::new(0, $padY),
+        [System.Drawing.PointF]::new(0, $padY + $padH),
+        [System.Drawing.Color]::FromArgb(255, 26, 26, 30),
+        [System.Drawing.Color]::FromArgb(255, 52, 52, 58)
+    )
+    $g.FillPath($padBrush, $padPath)
+
+    # Тень сверху (внутри углубления) — усиливает «вдавленность».
+    $shadowPath = New-RoundedRectPath $padX $padY $padW ([float]($padH * 0.45)) $padRadius
+    $shadowBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+        [System.Drawing.PointF]::new(0, $padY),
+        [System.Drawing.PointF]::new(0, $padY + $padH * 0.45),
+        [System.Drawing.Color]::FromArgb(150, 0, 0, 0),
+        [System.Drawing.Color]::FromArgb(0, 0, 0, 0)
+    )
+    $g.FillPath($shadowBrush, $shadowPath)
+
+    # Светлая кромка по низу углубления — свет падает на внутреннюю стенку.
+    $rimPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(70, 220, 220, 228), [float]([Math]::Max(0.5, $s * 0.008)))
+    $g.DrawPath($rimPen, $padPath)
+
+    # 4. Стрелки — светлые, внутри углубления.
+    $penWidth = [float]([Math]::Max(1.0, $s * 0.070))
+    $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(255, 238, 238, 242), $penWidth)
     $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
     $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
     $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
 
-    $left = $s * 0.27
-    $right = $s * 0.73
-    $centerY = $margin + $topH / 2
-    $topY = $centerY - $topH * 0.17
-    $bottomY = $centerY + $topH * 0.17
-    $headW = [float]($s * 0.13)
-    $headH = [float]($s * 0.17)
+    $left = $padX + $padW * 0.16
+    $right = $padX + $padW * 0.84
+    $centerY = $padY + $padH / 2
+    $topY = $centerY - $padH * 0.22
+    $bottomY = $centerY + $padH * 0.22
+    $headW = [float]([Math]::Max(1.0, $s * 0.10))
+    $headH = [float]([Math]::Max(1.2, $s * 0.14))
 
     $topArrow = New-ArrowPath $left $right $topY $headW $headH
     $bottomArrow = New-ArrowPath $right $left $bottomY $headW $headH
@@ -89,9 +119,13 @@ function New-IconBitmap([int]$size) {
 
     $g.Dispose()
     $pen.Dispose()
-    $edgePen.Dispose()
+    $rimPen.Dispose()
+    $shadowBrush.Dispose()
+    $padBrush.Dispose()
     $topBrush.Dispose()
     $baseBrush.Dispose()
+    $shadowPath.Dispose()
+    $padPath.Dispose()
     $topArrow.Dispose()
     $bottomArrow.Dispose()
     $topPath.Dispose()
