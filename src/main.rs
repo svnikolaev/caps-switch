@@ -52,8 +52,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_SPACE,
 };
 use windows_sys::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
-    NOTIFYICONDATAW,
+    Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_INFO, NIM_ADD, NIM_DELETE,
+    NIM_MODIFY, NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallNextHookEx, CreateIconFromResourceEx, CreatePopupMenu, CreateWindowExW,
@@ -71,6 +71,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 const LLKHF_INJECTED: u32 = 0x10;
 const TRAY_ID: u32 = 1;
 const WM_TRAY: u32 = WM_APP + 1;
+const WM_QUIT_REQUEST: u32 = WM_APP + 2;
 const TIMER_TRAY: usize = 1;
 
 const MENU_TOGGLE: usize = 1001;
@@ -95,6 +96,7 @@ static SHIFT_CAPS: AtomicBool = AtomicBool::new(true);
 static MODE: AtomicU8 = AtomicU8::new(0);
 static LANG_SETTING: AtomicU8 = AtomicU8::new(0);
 static CAPS_DOWN: AtomicBool = AtomicBool::new(false);
+static CHECKING: AtomicBool = AtomicBool::new(false);
 static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -523,7 +525,7 @@ unsafe fn handle_command(hwnd: HWND, cmd: usize) {
             update_tray(hwnd);
         }
         MENU_RESTART => restart_app(),
-        MENU_UPDATE => check_updates(),
+        MENU_UPDATE => check_updates_async(hwnd),
         MENU_ABOUT => show_about(),
         MENU_EXIT => PostQuitMessage(0),
         n if (MENU_MODE_BASE..MENU_MODE_BASE + 3).contains(&n) => {
@@ -602,26 +604,59 @@ fn latest_release() -> Option<(String, String)> {
     Some((tag, url))
 }
 
-unsafe fn show_message(text: &str) {
+unsafe fn show_message(owner: HWND, text: &str) {
     let body = wide(text);
     let title = wide("caps-switch");
     MessageBoxW(
-        null_mut(),
+        owner,
         body.as_ptr(),
         title.as_ptr(),
         MB_OK | MB_ICONINFORMATION,
     );
 }
 
-unsafe fn ask_yes_no(text: &str) -> bool {
+unsafe fn ask_yes_no(owner: HWND, text: &str) -> bool {
     let body = wide(text);
     let title = wide("caps-switch");
     MessageBoxW(
-        null_mut(),
+        owner,
         body.as_ptr(),
         title.as_ptr(),
         MB_YESNO | MB_ICONQUESTION,
     ) == IDYES
+}
+
+/// Всплывающее уведомление у иконки: пользователь видит, что проверка идёт.
+unsafe fn show_balloon(hwnd: HWND, text: &str) {
+    let mut nid: NOTIFYICONDATAW = zeroed();
+    nid.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
+    nid.hWnd = hwnd;
+    nid.uID = TRAY_ID;
+    nid.uFlags = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO;
+    for (dst, src) in nid.szInfo.iter_mut().zip(wide(text)) {
+        *dst = src;
+    }
+    for (dst, src) in nid.szInfoTitle.iter_mut().zip(wide("caps-switch")) {
+        *dst = src;
+    }
+    Shell_NotifyIconW(NIM_MODIFY, &nid);
+}
+
+/// Проверка обновлений в фоновом потоке.
+/// Сеть (curl) не должна блокировать поток хука и цикла сообщений: иначе окно
+/// «зависает», а Windows может снять низкоуровневый хук по таймауту.
+fn check_updates_async(owner: HWND) {
+    if CHECKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    unsafe { show_balloon(owner, msgs(effective_lang()).checking) };
+    let owner_value = owner as usize;
+    std::thread::spawn(move || {
+        let owner = owner_value as HWND;
+        check_updates(owner);
+        CHECKING.store(false, Ordering::SeqCst);
+    });
 }
 
 fn show_about() {
@@ -630,15 +665,15 @@ fn show_about() {
         .about_text
         .replace("{version}", current_version())
         .replace("{url}", &format!("https://github.com/{REPO}"));
-    unsafe { show_message(&text) };
+    unsafe { show_message(null_mut(), &text) };
 }
 
-fn check_updates() {
+fn check_updates(owner: HWND) {
     let m = msgs(effective_lang());
     let current = current_version();
 
     let Some((tag, url)) = latest_release() else {
-        unsafe { show_message(m.update_error) };
+        unsafe { show_message(owner, m.update_error) };
         return;
     };
 
@@ -650,7 +685,7 @@ fn check_updates() {
 
     if !is_newer {
         let text = m.update_none.replace("{current}", current);
-        unsafe { show_message(&text) };
+        unsafe { show_message(owner, &text) };
         return;
     }
 
@@ -659,14 +694,14 @@ fn check_updates() {
         .replace("{new}", &latest)
         .replace("{current}", current);
 
-    if unsafe { ask_yes_no(&text) } {
-        download_and_restart(&url);
+    if unsafe { ask_yes_no(owner, &text) } {
+        download_and_restart(owner, &url);
     }
 }
 
 /// Скачивает новый exe и перезапускает приложение через временный cmd-скрипт:
 /// заменить файл можно только после выхода процесса.
-fn download_and_restart(url: &str) {
+fn download_and_restart(owner: HWND, url: &str) {
     let target = exe_path();
     let tmp = std::env::temp_dir().join("caps-switch-update.exe");
 
@@ -679,7 +714,7 @@ fn download_and_restart(url: &str) {
         .unwrap_or(false);
 
     if !downloaded || !tmp.exists() {
-        unsafe { show_message(msgs(effective_lang()).update_error) };
+        unsafe { show_message(owner, msgs(effective_lang()).update_error) };
         return;
     }
 
@@ -692,7 +727,7 @@ fn download_and_restart(url: &str) {
     );
 
     if std::fs::write(&script, body).is_err() {
-        unsafe { show_message(msgs(effective_lang()).update_error) };
+        unsafe { show_message(owner, msgs(effective_lang()).update_error) };
         return;
     }
 
@@ -704,7 +739,8 @@ fn download_and_restart(url: &str) {
         .creation_flags(CREATE_NO_WINDOW)
         .spawn();
 
-    unsafe { PostQuitMessage(0) };
+    // Просим UI-поток завершиться: PostQuitMessage действует только на свой поток.
+    unsafe { PostMessageW(owner, WM_QUIT_REQUEST, 0, 0) };
 }
 
 unsafe extern "system" fn wnd_proc(
@@ -728,6 +764,10 @@ unsafe extern "system" fn wnd_proc(
         }
         WM_COMMAND => {
             handle_command(hwnd, wparam & 0xFFFF);
+            0
+        }
+        WM_QUIT_REQUEST => {
+            PostQuitMessage(0);
             0
         }
         WM_TIMER => {
