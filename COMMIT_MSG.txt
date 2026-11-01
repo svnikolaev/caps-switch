@@ -1,0 +1,13 @@
+fix: review findings — settings parsing, tray survival, modifier handling, registry API
+
+- critical: DWORD settings were compared with "1" while reg query returns 0x1,
+  so the app disabled itself after any menu change; now typed Win32 Registry API
+- tray: hidden top-level window (message-only never gets TaskbarCreated broadcast),
+  handle TaskbarCreated, retry NIM_ADD by timer
+- hook: do not inject a modifier the user already holds; edge-triggered CapsLock guard
+- layout fallback uses the foreground thread's keyboard layout
+- restart: exit-event handshake, Local mutex
+- installer: quoted schtasks path, --elevated removes duplicate Run entry
+- add --version, fatal error message box, per-monitor DPI awareness
+- tests (7) and CI: fmt, clippy -D warnings, test, CLI smoke
+- version 0.2.1

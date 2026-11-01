@@ -15,9 +15,33 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --all
 
       - name: Build
         run: cargo build --release --locked
+
+      - name: Smoke test CLI
+        shell: pwsh
+        run: |
+          $exe = "target\release\caps-switch.exe"
+          $version = & $exe --version
+          if ($version.Trim() -ne (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value) {
+            throw "unexpected version: $version"
+          }
+          & $exe --status | Out-Null
+          & $exe --help | Out-Null
+          & $exe --bogus 2>$null
+          if ($LASTEXITCODE -ne 64) { throw "expected exit code 64 for bad argument" }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

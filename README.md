@@ -33,9 +33,9 @@ Shift+CapsLock  → normal CapsLock (toggles caps)
 1. On **CapsLock press** (without Shift) the event is swallowed — caps never toggles —
    and `Alt+Shift` is injected with `SendInput`, which Windows treats as the system
    layout-switch hotkey.
-2. If injection is refused (e.g. the foreground window has a higher integrity level —
-   an elevated app), it falls back to posting `WM_INPUTLANGCHANGEREQUEST` with the next
-   layout to the foreground window.
+2. If injection is refused, it falls back to posting `WM_INPUTLANGCHANGEREQUEST` with the next
+   layout to the foreground window. Note: for **elevated** windows both paths are blocked by
+   UIPI — see Limitations.
 3. On **Shift+CapsLock** the event is passed through untouched, so the normal caps
    toggle happens.
 4. Injected events are recognised (`LLKHF_INJECTED`) and skipped, so there is no recursion.
@@ -88,9 +88,28 @@ Result: `target\release\caps-switch.exe`.
 ## Limitations
 
 - Like any keyboard hook, it does not see keystrokes while an **elevated** window is
-  focused, unless `caps-switch` itself runs elevated (`--install --elevated`).
+  focused, unless `caps-switch` itself runs elevated (`--install --elevated`). The
+  `WM_INPUTLANGCHANGEREQUEST` fallback does not help there — UIPI blocks it too.
+- Turning **off** `Shift+CapsLock — normal Caps Lock` in the tray menu means CapsLock is
+  fully dedicated to layout switching; there is then no way to toggle caps with the
+  keyboard (the hook swallows it).
 - The tray icon uses the stock Windows application icon; a custom icon is on the roadmap.
 - Only layout switching is affected; IME-specific hotkeys are untouched.
+- The executable is **not code-signed**. It installs a global low-level keyboard hook,
+  so antivirus heuristics and SmartScreen may warn. Compare the SHA-256 published in the
+  release with the downloaded file if you want to be sure.
+
+## Manual test checklist
+
+1. CapsLock switches the layout instantly; caps state does not change.
+2. Hold CapsLock for 3 seconds — the layout must switch **once**, not repeatedly.
+3. `Shift+CapsLock` toggles caps (with the option enabled).
+4. Switch the method in the tray menu (Alt+Shift / Ctrl+Shift / Win+Space) — each works.
+5. Change the interface language in the tray menu — the menu and tooltip follow.
+6. Restart the app from the tray menu — one icon remains, switching still works.
+7. Restart Explorer (`taskkill /f /im explorer.exe` then start it) — the icon returns.
+8. Settings survive a reboot (enabled state, method, language).
+9. In an elevated app: without `--install --elevated` CapsLock does nothing (expected).
 
 ## Why not…?
 
@@ -147,5 +166,10 @@ caps-switch.exe --uninstall
 ### Ограничения
 
 - Как и любой хук, не видит ввод, когда активно **админское** окно, если сама утилита
-  запущена без прав администратора (лечится `--install --elevated`).
+  запущена без прав администратора (лечится `--install --elevated`). Резервный путь через
+  `WM_INPUTLANGCHANGEREQUEST` там тоже не сработает — UIPI блокирует и его.
+- Если выключить в трее пункт «Shift+CapsLock — обычный Caps», CapsLock полностью
+  отдаётся переключению языка, и включить Caps с клавиатуры будет нечем.
 - Иконка в трее пока стандартная системная.
+- exe **не подписан**. Утилита ставит глобальный хук клавиатуры, поэтому антивирусные
+  эвристики и SmartScreen могут предупреждать. Сверяйте SHA-256 из релиза с файлом.
