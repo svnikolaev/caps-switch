@@ -11,12 +11,16 @@ Shift+CapsLock  → normal CapsLock (toggles caps)
 
 ## Features
 
-- **Instant layout switch**: emulates the system `Alt+Shift` hotkey, so no `Win+Space`
-  overlay animation and no delay.
+- **Switch method**: `Alt+Shift` (default), `Ctrl+Shift` or `Win+Space` — chosen in the tray menu.
+  Emulating `Alt+Shift`/`Ctrl+Shift` avoids the `Win+Space` overlay animation, so switching is instant.
 - **CapsLock still works**: hold `Shift` and press CapsLock to toggle caps as usual
   (can be disabled in the tray menu).
-- **Tray icon** with a menu: enable/disable switching, toggle the `Shift+CapsLock`
-  behaviour, exit.
+- **Interface language**: Russian and English, detected from the system locale,
+  switchable in the tray menu (Auto / Русский / English).
+- **Tray icon** with a menu: enable/disable switching, switch method, language,
+  `Shift+CapsLock` mode, restart, exit.
+- **Restart** item — brings the app back if Windows killed it.
+- **Settings persist** in `HKCU\Software\caps-switch`.
 - **CLI**: install autostart for the current user, optionally as a scheduled task
   with highest privileges (covers elevated windows), plus `--status` and `--uninstall`.
 - **No runtime dependencies**: only system DLLs, no .NET, no AutoHotkey.
@@ -114,11 +118,17 @@ Shift+CapsLock  → обычный CapsLock (включить/выключить
 
 ### Возможности
 
-- Мгновенное переключение: эмулируется системное `Alt+Shift`, поэтому нет плашки
-  и задержки, как у `Win+Space`.
+- **Способ переключения**: `Alt+Shift` (по умолчанию), `Ctrl+Shift` или `Win+Space` —
+  выбор в меню трея. Эмуляция `Alt+Shift`/`Ctrl+Shift` не показывает плашку, поэтому
+  переключение мгновенное.
 - CapsLock не потерян: `Shift+CapsLock` работает как обычный Caps (можно отключить
   в меню трея).
-- Иконка в трее: включить/выключить переключение, режим `Shift+CapsLock`, выход.
+- **Язык интерфейса**: русский и английский, определяется по системной локали и
+  переключается в меню трея (Авто / Русский / English).
+- Иконка в трее: включить/выключить переключение, способ переключения, язык,
+  режим `Shift+CapsLock`, перезапуск, выход.
+- **Перезапуск** — на случай, если Windows завершит процесс.
+- Настройки сохраняются в `HKCU\Software\caps-switch`.
 - CLI: автозапуск для текущего пользователя, в том числе задачей Планировщика
   с наивысшими правами (работает и в админских окнах), `--status`, `--uninstall`.
 - Никаких зависимостей: только системные DLL — без .NET и AutoHotkey.
