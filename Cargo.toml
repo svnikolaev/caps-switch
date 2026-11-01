@@ -1,6 +1,6 @@
 [package]
 name = "caps-switch"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Switch Windows keyboard layout with CapsLock (Alt+Shift / Ctrl+Shift / Win+Space), with tray icon and Shift+CapsLock passthrough"
@@ -33,4 +33,5 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
 

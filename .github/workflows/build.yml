@@ -34,14 +34,18 @@ jobs:
         shell: pwsh
         run: |
           $exe = "target\release\caps-switch.exe"
-          $version = & $exe --version
-          if ($version.Trim() -ne (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value) {
-            throw "unexpected version: $version"
-          }
-          & $exe --status | Out-Null
-          & $exe --help | Out-Null
-          & $exe --bogus 2>$null
-          if ($LASTEXITCODE -ne 64) { throw "expected exit code 64 for bad argument" }
+          $out = Join-Path $env:RUNNER_TEMP "cli-out.txt"
+          $p = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru -RedirectStandardOutput $out
+          if ($p.ExitCode -ne 0) { throw "version exited with $($p.ExitCode)" }
+          $version = (Get-Content $out -Raw).Trim()
+          $expected = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches.Groups[1].Value
+          if ($version -ne $expected) { throw "unexpected version: $version (expected $expected)" }
+
+          $p = Start-Process -FilePath $exe -ArgumentList "--status" -Wait -PassThru -RedirectStandardOutput $out
+          if ($p.ExitCode -ne 0) { throw "status exited with $($p.ExitCode)" }
+
+          $p = Start-Process -FilePath $exe -ArgumentList "--bogus" -Wait -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+          if ($p.ExitCode -ne 64) { throw "expected exit code 64 for bad argument, got $($p.ExitCode)" }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

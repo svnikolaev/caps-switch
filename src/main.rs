@@ -12,6 +12,20 @@
 
 #![windows_subsystem = "windows"]
 
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
+macro_rules! esay {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 mod i18n;
 mod settings;
 
@@ -620,20 +634,20 @@ fn install(elevated: bool) {
             ],
         );
         if !ok {
-            eprintln!(
+            esay!(
                 "Не удалось создать задачу. Запусти из консоли администратора:\n  {exe} --install --elevated"
             );
             std::process::exit(1);
         }
         // Задача и запись в Run одновременно не нужны.
         if has_run_value() && run("reg", &["delete", RUN_KEY, "/v", RUN_VALUE, "/f"]) {
-            println!("Удалён дублирующий автозапуск из HKCU\\...\\Run.");
+            say!("Удалён дублирующий автозапуск из HKCU\\...\\Run.");
         }
-        println!("Установлено: задача Планировщика «{TASK_NAME}» (при входе, наивысшие права).");
-        println!("exe: {exe}");
+        say!("Установлено: задача Планировщика «{TASK_NAME}» (при входе, наивысшие права).");
+        say!("exe: {exe}");
     } else {
         if has_task() {
-            println!("Внимание: уже есть задача Планировщика «{TASK_NAME}». Она главнее записи в реестре.");
+            say!("Внимание: уже есть задача Планировщика «{TASK_NAME}». Она главнее записи в реестре.");
         }
         let quoted = format!("\"{exe}\"");
         let ok = run(
@@ -643,12 +657,12 @@ fn install(elevated: bool) {
             ],
         );
         if !ok {
-            eprintln!("Не удалось записать автозапуск в реестр.");
+            esay!("Не удалось записать автозапуск в реестр.");
             std::process::exit(1);
         }
-        println!("Установлено: автозапуск в HKCU\\...\\Run (обычные права).");
-        println!("exe: {exe}");
-        println!("Для работы в админских окнах: {exe} --install --elevated");
+        say!("Установлено: автозапуск в HKCU\\...\\Run (обычные права).");
+        say!("exe: {exe}");
+        say!("Для работы в админских окнах: {exe} --install --elevated");
     }
 }
 
@@ -656,7 +670,7 @@ fn uninstall() {
     let run_removed = run("reg", &["delete", RUN_KEY, "/v", RUN_VALUE, "/f"]);
     let task_removed = run("schtasks", &["/delete", "/tn", TASK_NAME, "/f"]);
 
-    println!(
+    say!(
         "Автозапуск в реестре: {}",
         if run_removed {
             "удалён"
@@ -664,7 +678,7 @@ fn uninstall() {
             "не найден"
         }
     );
-    println!(
+    say!(
         "Задача Планировщика: {}",
         if task_removed {
             "удалена"
@@ -672,36 +686,36 @@ fn uninstall() {
             "не найдена"
         }
     );
-    println!("Настройки в HKCU\\Software\\caps-switch сохранены (удаляются вручную).");
+    say!("Настройки в HKCU\\Software\\caps-switch сохранены (удаляются вручную).");
 }
 
 fn status() {
-    println!("version:              {}", env!("CARGO_PKG_VERSION"));
-    println!(
+    say!("version:              {}", env!("CARGO_PKG_VERSION"));
+    say!(
         "registry (HKCU Run):  {}",
         if has_run_value() { "enabled" } else { "none" }
     );
-    println!(
+    say!(
         "scheduled task:       {}",
         if has_task() { "enabled" } else { "none" }
     );
-    println!("exe: {}", exe_path());
+    say!("exe: {}", exe_path());
 }
 
 fn help() {
-    println!(
+    say!(
         "caps-switch {} — CapsLock switches the keyboard layout.\n",
         env!("CARGO_PKG_VERSION")
     );
-    println!("Usage:");
-    println!("  caps-switch                        run (tray icon + keyboard hook)");
-    println!("  caps-switch --install              autostart at logon, normal privileges");
-    println!("  caps-switch --install --elevated   autostart at logon, highest privileges");
-    println!("  caps-switch --uninstall            remove autostart entries");
-    println!("  caps-switch --status               show autostart state");
-    println!("  caps-switch --version              print version");
-    println!("  caps-switch --help                 this help\n");
-    println!("Switch method, interface language and Shift+CapsLock mode are in the tray menu.");
+    say!("Usage:");
+    say!("  caps-switch                        run (tray icon + keyboard hook)");
+    say!("  caps-switch --install              autostart at logon, normal privileges");
+    say!("  caps-switch --install --elevated   autostart at logon, highest privileges");
+    say!("  caps-switch --uninstall            remove autostart entries");
+    say!("  caps-switch --status               show autostart state");
+    say!("  caps-switch --version              print version");
+    say!("  caps-switch --help                 this help\n");
+    say!("Switch method, interface language and Shift+CapsLock mode are in the tray menu.");
 }
 
 // ---------------------------------------------------------------- консоль
@@ -778,11 +792,11 @@ fn main() {
         "--install" => install(args.iter().any(|a| a == "--elevated")),
         "--uninstall" => uninstall(),
         "--status" => status(),
-        "--version" | "-V" => println!("{}", env!("CARGO_PKG_VERSION")),
+        "--version" | "-V" => say!("{}", env!("CARGO_PKG_VERSION")),
         "--help" | "-h" => help(),
         "--restarted" => {}
         other => {
-            eprintln!("Unknown argument: {other}\n");
+            esay!("Unknown argument: {other}\n");
             help();
             std::process::exit(64);
         }
